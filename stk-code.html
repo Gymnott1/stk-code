@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Store - Buy with M-Pesa</title>
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+        }
+
+        .music-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .music-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .music-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .music-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .music-artist {
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        .price {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #00a550;
+            margin-bottom: 15px;
+        }
+
+        .buy-button {
+            width: 100%;
+            padding: 15px;
+            background: #00a550;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .buy-button:hover {
+            background: #008f44;
+            transform: scale(1.02);
+        }
+
+        .buy-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .reference {
+            margin-top: 10px;
+            font-size: 0.85em;
+            color: #666;
+            font-family: monospace;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        /* Modal for payment instructions */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .modal-close {
+            float: right;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .qr-container {
+            text-align: center;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .qr-code {
+            display: inline-block;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+
+        .qr-instructions {
+            background: #f0f7ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .tab-button:hover {
+            background: #f0f7ff;
+        }
+
+        .tab-button.active:hover {
+            background: #5568d3;
+        }
+
+        .payment-content {
+            display: none;
+        }
+
+        .payment-content.active {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .music-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Music Store</h1>
+        <div class="music-grid" id="musicGrid"></div>
+    </div>
+
+    <!-- Payment Modal -->
+    <div class="modal" id="paymentModal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <h2>Payment Instructions</h2>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // ================================
+        // CONFIGURATION - CHANGE THESE!
+        // ================================
+        const CONFIG = {
+            paybill: '123456',  // Your M-Pesa paybill number
+            serverUrl: 'https://yourserver.com',  // Your server URL
+            checkPaymentInterval: 5000,  // Check every 5 seconds
+            paymentTimeout: 300000  // 5 minutes timeout
+        };
+
+        // ================================
+        // MUSIC DATABASE
+        // ================================
+        const musicLibrary = [
+            {
+                id: 'song001',
+                title: 'Awesome Beat',
+                artist: 'DJ Cool',
+                price: 100,
+                file: 'awesome_beat.mp3'
+            },
+            {
+                id: 'song002',
+                title: 'Summer Vibes',
+                artist: 'The Band',
+                price: 150,
+                file: 'summer_vibes.mp3'
+            },
+            {
+                id: 'song003',
+                title: 'Night Drive',
+                artist: 'Producer X',
+                price: 200,
+                file: 'night_drive.mp3'
+            },
+            {
+                id: 'song004',
+                title: 'Dance Party',
+                artist: 'Party Mix',
+                price: 100,
+                file: 'dance_party.mp3'
+            }
+        ];
+
+        // ================================
+        // HELPER FUNCTIONS
+        // ================================
+        
+        function generateReference() {
+            const timestamp = Date.now().toString().slice(-8);
+            const random = Math.random().toString(36).substring(2, 5).toUpperCase();
+            return `MUSIC${timestamp}${random}`;
+        }
+
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        // ================================
+        // PAYMENT FUNCTIONS
+        // ================================
+
+        function buyMusic(musicId) {
+            const music = musicLibrary.find(m => m.id === musicId);
+            if (!music) return;
+
+            const reference = generateReference();
+            
+            // Build USSD code
+            const ussdCode = `*334*1*${CONFIG.paybill}*${music.price}*${reference}#`;
+            
+            // Store payment info
+            const paymentInfo = {
+                reference,
+                musicId,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(`payment_${reference}`, JSON.stringify(paymentInfo));
+            
+            if (isMobile()) {
+                // Mobile: Give user choice between USSD and QR
+                showMobilePaymentOptions(music, reference, ussdCode);
+            } else {
+                // Desktop - show QR code and manual instructions
+                showPaymentInstructions(music, reference, ussdCode);
+            }
+        }
+
+        function showMobilePaymentOptions(music, reference, ussdCode) {
+            const choice = confirm(
+                `Pay KES ${music.price} for "${music.title}"\n\n` +
+                `Click OK to dial USSD code automatically\n` +
+                `Click Cancel to see QR code and manual options`
+            );
+
+            if (choice) {
+                // User chose USSD - open dialer
+                window.location.href = `tel:${encodeURIComponent(ussdCode)}`;
+                updateCardStatus(music.id, 'pending', reference);
+                startPaymentCheck(reference, music.id);
+            } else {
+                // User wants to see QR code
+                showPaymentInstructions(music, reference, ussdCode);
+            }
+        }
+
+        function startPaymentCheck(reference, musicId) {
+            const startTime = Date.now();
+            
+            const checkInterval = setInterval(async () => {
+                // Check if timeout reached
+                if (Date.now() - startTime > CONFIG.paymentTimeout) {
+                    clearInterval(checkInterval);
+                    updateCardStatus(musicId, 'timeout');
+                    return;
+                }
+                
+                try {
+                    // Check payment status from your server
+                    const response = await fetch(`${CONFIG.serverUrl}/check-payment/${reference}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'found' && data.processed) {
+                        clearInterval(checkInterval);
+                        updateCardStatus(musicId, 'success');
+                        
+                        // Download music after 2 seconds
+                        setTimeout(() => {
+                            downloadMusic(musicId);
+                        }, 2000);
+                    }
+                } catch (error) {
+                    console.error('Error checking payment:', error);
+                }
+            }, CONFIG.checkPaymentInterval);
+        }
+
+        function downloadMusic(musicId) {
+            const music = musicLibrary.find(m => m.id === musicId);
+            if (!music) return;
+            
+            alert(`🎉 Payment confirmed! Downloading ${music.title}...`);
+            
+            // In production, this would be a real download link from your server
+            window.location.href = `${CONFIG.serverUrl}/download/${musicId}`;
+        }
+
+        // ================================
+        // UI UPDATE FUNCTIONS
+        // ================================
+
+        function updateCardStatus(musicId, status, reference = '') {
+            const card = document.querySelector(`[data-music-id="${musicId}"]`);
+            if (!card) return;
+            
+            const button = card.querySelector('.buy-button');
+            const statusDiv = card.querySelector('.status') || createStatusDiv(card);
+            const refDiv = card.querySelector('.reference') || createRefDiv(card);
+            
+            switch(status) {
+                case 'pending':
+                    button.disabled = true;
+                    button.textContent = '⏳ Waiting for payment...';
+                    statusDiv.className = 'status pending';
+                    statusDiv.textContent = 'Complete the payment on your phone';
+                    refDiv.textContent = `Ref: ${reference}`;
+                    break;
+                    
+                case 'success':
+                    button.disabled = true;
+                    button.textContent = '✅ Payment Confirmed!';
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = '🎉 Downloading your music...';
+                    break;
+                    
+                case 'timeout':
+                    button.disabled = false;
+                    button.textContent = '💳 Buy Now';
+                    statusDiv.className = 'status';
+                    statusDiv.textContent = 'Payment timeout. Try again.';
+                    break;
+            }
+        }
+
+        function createStatusDiv(card) {
+            const div = document.createElement('div');
+            div.className = 'status';
+            card.appendChild(div);
+            return div;
+        }
+
+        function createRefDiv(card) {
+            const div = document.createElement('div');
+            div.className = 'reference';
+            card.appendChild(div);
+            return div;
+        }
+
+        // ================================
+        // MODAL FUNCTIONS
+        // ================================
+
+        function showPaymentInstructions(music, reference, ussdCode) {
+            const modal = document.getElementById('paymentModal');
+            const content = document.getElementById('modalContent');
+            
+            content.innerHTML = `
+                <h3>${music.title}</h3>
+                <p style="font-size: 1.5em; color: #00a550; font-weight: bold;">KES ${music.price}</p>
+                <p style="margin: 20px 0;"><strong>Transaction Reference:</strong><br>
+                <code style="background: #f0f0f0; padding: 5px 10px; border-radius: 5px;">${reference}</code></p>
+                
+                <!-- Tab Buttons -->
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="switchTab('qr')">📱 Scan QR Code</button>
+                    <button class="tab-button" onclick="switchTab('manual')">📝 Manual Payment</button>
+                </div>
+
+                <!-- QR Code Tab -->
+                <div id="qr-tab" class="payment-content active">
+                    <div class="qr-instructions">
+                        <h4 style="margin-bottom: 10px;">📱 How to Pay with QR Code:</h4>
+                        <ol style="line-height: 1.8; text-align: left;">
+                            <li>Open your phone's camera or any QR scanner app</li>
+                            <li>Point camera at the QR code below</li>
+                            <li>Tap the notification/link that appears</li>
+                            <li>Your phone will open this page and dial M-Pesa automatically</li>
+                            <li>Press "Call" and enter your M-PESA PIN</li>
+                        </ol>
+                        <p style="margin-top: 10px; padding: 10px; background: #fff3cd; border-radius: 5px; font-size: 0.9em;">
+                            💡 <strong>Tip:</strong> The QR code opens a link that auto-dials the M-Pesa code for you!
+                        </p>
+                    </div>
+                    
+                    <div class="qr-container">
+                        <div id="qrcode-${reference}" class="qr-code"></div>
+                        <p style="margin-top: 10px; color: #666;">Scan to auto-dial M-Pesa payment</p>
+                    </div>
+                </div>
+
+                <!-- Manual Payment Tab -->
+                <div id="manual-tab" class="payment-content">
+                    <div class="qr-instructions">
+                        <h4 style="margin-bottom: 10px;">📝 Manual Payment Steps:</h4>
+                        <ol style="line-height: 2; text-align: left;">
+                            <li>Open M-Pesa on your phone</li>
+                            <li>Select <strong>Lipa Na M-PESA</strong></li>
+                            <li>Select <strong>Paybill</strong></li>
+                            <li>Business Number: <strong>${CONFIG.paybill}</strong></li>
+                            <li>Account Number: <strong>${reference}</strong></li>
+                            <li>Amount: <strong>${music.price}</strong></li>
+                            <li>Enter your M-PESA PIN</li>
+                        </ol>
+                    </div>
+                </div>
+                
+                <p style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-radius: 5px;">
+                    ✨ Your music will be available for download immediately after payment!
+                </p>
+            `;
+            
+            modal.classList.add('show');
+            
+            // Generate QR Code for M-Pesa payment
+            generateMpesaQR(reference, music, ussdCode);
+            
+            // Start checking for payment
+            startPaymentCheck(reference, music.id);
+        }
+
+        function closeModal() {
+            document.getElementById('paymentModal').classList.remove('show');
+        }
+
+        // ================================
+        // QR CODE FUNCTIONS
+        // ================================
+
+        function generateMpesaQR(reference, music, ussdCode) {
+            const qrContainer = document.getElementById(`qrcode-${reference}`);
+            if (!qrContainer) return;
+
+            // Clear any existing QR code
+            qrContainer.innerHTML = '';
+
+            // Create a URL that will open the payment page with auto-dial
+            // When user scans QR with their phone, it opens this URL
+            const paymentUrl = `${window.location.origin}${window.location.pathname}?action=pay&ref=${reference}&music=${music.id}&amount=${music.price}`;
+
+            // Generate QR code with the URL
+            new QRCode(qrContainer, {
+                text: paymentUrl,
+                width: 256,
+                height: 256,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        }
+
+        function switchTab(tabName) {
+            // Update button states
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(btn => {
+                if (btn.textContent.includes(tabName === 'qr' ? 'QR Code' : 'Manual')) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            // Update content visibility
+            const qrTab = document.getElementById('qr-tab');
+            const manualTab = document.getElementById('manual-tab');
+            
+            if (tabName === 'qr') {
+                qrTab.classList.add('active');
+                manualTab.classList.remove('active');
+            } else {
+                qrTab.classList.remove('active');
+                manualTab.classList.add('active');
+            }
+        }
+
+        // ================================
+        // RENDER MUSIC LIBRARY
+        // ================================
+
+        function renderMusicLibrary() {
+            const grid = document.getElementById('musicGrid');
+            
+            musicLibrary.forEach(music => {
+                const card = document.createElement('div');
+                card.className = 'music-card';
+                card.setAttribute('data-music-id', music.id);
+                
+                card.innerHTML = `
+                    <div class="music-title">${music.title}</div>
+                    <div class="music-artist">by ${music.artist}</div>
+                    <div class="price">KES ${music.price}</div>
+                    <button class="buy-button" onclick="buyMusic('${music.id}')">
+                        💳 Buy Now
+                    </button>
+                `;
+                
+                grid.appendChild(card);
+            });
+        }
+
+        // ================================
+        // INITIALIZE
+        // ================================
+
+        // Check if user came from QR code scan
+        function checkQRCodeScan() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            if (urlParams.get('action') === 'pay') {
+                const reference = urlParams.get('ref');
+                const musicId = urlParams.get('music');
+                const amount = urlParams.get('amount');
+                
+                if (reference && musicId && amount) {
+                    // User scanned QR code - automatically dial USSD
+                    const ussdCode = `*334*1*${CONFIG.paybill}*${amount}*${reference}#`;
+                    
+                    // Show a quick message
+                    alert(`Opening M-Pesa payment for KES ${amount}...`);
+                    
+                    // Open phone dialer with USSD code
+                    window.location.href = `tel:${encodeURIComponent(ussdCode)}`;
+                    
+                    // Update UI to show payment is pending
+                    setTimeout(() => {
+                        updateCardStatus(musicId, 'pending', reference);
+                        startPaymentCheck(reference, musicId);
+                    }, 1000);
+                }
+            }
+        }
+
+        // Render music on page load
+        renderMusicLibrary();
+        
+        // Check if coming from QR code scan
+        checkQRCodeScan();
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('paymentModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        };
+    </script>
+</body>
+</html>
